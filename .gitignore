@@ -1,0 +1,13 @@
+/_build/
+/cover/
+/deps/
+/doc/
+/tmp/
+/.expert/
+
+erl_crash.dump
+
+*.ez
+
+conclave-*.tar
+
