@@ -2,7 +2,6 @@ defmodule Conclave.Dean do
   use GenServer
 
   alias Conclave.Config
-  # alias Conclave.Steward
 
   require Logger
 
@@ -37,13 +36,13 @@ defmodule Conclave.Dean do
   end
 
   def handle_cast({:quorum_changed, _value}, state), do: noreply(state)
-  def handle_cast({:new_main, pid}, state), do: state |> set_monitor(pid) |> noreply()
+  def handle_cast({:took_over, pid}, state), do: state |> set_monitor(pid) |> noreply()
 
-  def handle_cast(:notify_position, state) do
+  def handle_cast(:notify_taking_over, state) do
     state.config.name
     |> Conclave.which_members()
     |> Enum.each(fn node ->
-      GenServer.cast({state.config.dean_name, node}, {:new_main, self()})
+      GenServer.cast({state.config.dean_name, node}, {:took_over, self()})
     end)
 
     state |> take_main() |> noreply()
@@ -84,7 +83,7 @@ defmodule Conclave.Dean do
         take_main(state)
 
       ^self ->
-        set_as_main(state)
+        take_over(state)
 
       pid ->
         if opts[:force_new] == true and pid == state.main_pid do
@@ -97,13 +96,13 @@ defmodule Conclave.Dean do
 
   defp take_main(state) do
     case :global.register_name(state.config.main_dean_name, self(), &resolve_main_conflict/3) do
-      :yes -> set_as_main(state)
+      :yes -> take_over(state)
       :no -> monitor_main(state)
     end
   end
 
   defp resolve_main_conflict(_name, main_pid, _dean) do
-    GenServer.cast(main_pid, :notify_position)
+    GenServer.cast(main_pid, :notify_taking_over)
 
     main_pid
   end
@@ -136,69 +135,19 @@ defmodule Conclave.Dean do
     %{state | active?: true}
   end
 
-  defp set_as_main(%{main?: true} = state) do
+  defp take_over(%{main?: true} = state) do
     Logger.info("[#{state.config.name}] Current node is already the main Dean")
 
     state
   end
 
-  defp set_as_main(state) do
+  defp take_over(state) do
     Logger.info("[#{state.config.name}] Current node is the main Dean")
 
     if state.main_ref, do: Process.demonitor(state.main_ref)
 
     %{state | main?: true, main_ref: nil, main_pid: nil, main_node: nil}
   end
-
-  # @impl true
-  # def handle_call({:start_child, child_spec}, _from, %{main?: true} = state) do
-  #   state.config
-  #   |> Steward.start_child(child_spec)
-  #   |> reply(state)
-  # end
-  #
-  # @impl true
-  # def handle_call({:terminate_child, pid}, _from, state) do
-  #   pid_node = node(pid)
-  #
-  #   if node() == pid_node do
-  #     state.config
-  #     |> Steward.terminate_child(pid)
-  #     |> reply(state)
-  #   else
-  #     {state.config.dean_name, pid_node}
-  #     |> GenServer.call({:terminate_child, pid})
-  #     |> reply(state)
-  #   end
-  # end
-  #
-  # @impl true
-  # def handle_call(:which_children, _from, state) do
-  #   Node.list()
-  #   |> Enum.reduce([{node(), inner_which_children(state.config)}], fn node, acc ->
-  #     [{node, GenServer.call({state.config.dean_name, node}, :inner_which_children)} | acc]
-  #   end)
-  #   |> reply(state)
-  # end
-  #
-  # def handle_call(:inner_which_children, _from, state) do
-  #   state.config
-  #   |> inner_which_children()
-  #   |> reply(state)
-  # end
-  #
-  # @impl true
-  #
-  # def handle_call(msg, _from, %{main?: false} = state) do
-  #   state.main_pid
-  #   |> GenServer.call(msg)
-  #   |> reply(state)
-  # end
-  #
-  #
-  # defp inner_which_children(config) do
-  #   Steward.which_children(config)
-  # end
 
   defp reply(msg, state), do: {:reply, msg, state}
   defp noreply(state), do: {:noreply, state}

@@ -29,7 +29,7 @@ defmodule Conclave.Quorum do
   def handle_cast({:register, node, opts}, state) do
     Logger.info("[#{state.config.name}] Registered member #{node}")
 
-    if opts[:reply?], do: register_message(state, node, reply?: false)
+    if opts[:reply?], do: register_message(node, state, reply?: false)
 
     state
     |> checkin(node)
@@ -39,7 +39,7 @@ defmodule Conclave.Quorum do
   @impl true
   def handle_continue(:register, state) do
     Node.list()
-    |> Enum.reduce(state, &register_message(&2, &1))
+    |> Enum.reduce(state, &register_message/2)
     |> notify_quorum()
     |> noreply()
   end
@@ -48,8 +48,8 @@ defmodule Conclave.Quorum do
   def handle_info({:nodeup, node, _opts}, state) when node == node(), do: noreply(state)
 
   def handle_info({:nodeup, node, _opts}, state) do
-    state
-    |> register_message(node, reply?: false)
+    node
+    |> register_message(state, reply?: false)
     |> noreply()
   end
 
@@ -59,16 +59,7 @@ defmodule Conclave.Quorum do
     |> noreply()
   end
 
-  # def handle_info({:nodeup, _node, _opts}, %{main?: true} = state) do
-  #   state |> monitor_main() |> noreply()
-  # end
-  # def handle_info({:nodeup, _node, _opts}, state), do: state |> noreply()
-  # def handle_info({:nodedown, node, _opts}, %{main_node: node} = state) do
-  #   state |> monitor_main() |> noreply()
-  # end
-  # def handle_info({:nodedown, _node, _opts}, state), do: state |> noreply()
-
-  defp register_message(state, node, opts \\ []) do
+  defp register_message(node, state, opts \\ []) do
     GenServer.cast(
       {state.config.quorum_name, node},
       {:register, node(),
